@@ -217,7 +217,7 @@ openstack --version
    ```py
    [database]
    # ...
-   connection = mysql+pymysql://keystone:705432@controller/keystone
+   connection = mysql+pymysql://keystone:705432@192.168.0.11/keystone
    ```
 
    在 `[token]` 部分中，配置 Fernet 令牌提供程序：

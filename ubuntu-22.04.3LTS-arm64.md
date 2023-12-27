@@ -1,14 +1,14 @@
 # ubuntu-22.04.3LTS arm64
 
-- [x] Keystone-身份验证服务
-- [x] Horizon-仪表盘
-- [x] Nova控制节点
-  - [x] Nova-控制节点
-  - [x] Nova-计算节点
-- [x] Placement-安置服务
-- [x] Cinder-块存储服务
-- [x] Glance-镜像服务
-- [ ] Neutron-网络服务
+- Keystone-身份验证服务
+- Horizon-仪表盘
+- Nova-计算服务
+  - Nova-主控节点
+  - Nova-计算节点
+- Placement-安置服务
+- Cinder-块存储服务 (主控节点)
+- Glance-镜像服务
+- Neutron-网络服务
 
 # 控制节点
 

@@ -91,7 +91,7 @@ netplan apply
 2. 添加 `openstack` 用户：
 
    ```bash
-   rabbitmqctl add_user openstack RABBIT_PASS
+   rabbitmqctl add_user openstack 705432
    ```
 
 3. 允许 `openstack` 用户进行配置、写入和读取访问：
@@ -941,8 +941,8 @@ service nova-novncproxy restart
    auth_url = http://192.168.0.11:5000
    memcached_servers = 192.168.0.11:11211
    auth_type = password
-   project_domain_name = default
-   user_domain_name = default
+   project_domain_name = Default
+   user_domain_name = Default
    project_name = service
    username = cinder
    password = 705432

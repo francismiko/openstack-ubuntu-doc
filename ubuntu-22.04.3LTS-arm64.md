@@ -19,11 +19,14 @@
 修改配置文件`/etc/netplan/00-installer-config.yaml`:
 
 ```yaml
-dhcp4: no
+enp0s5:
+  dhcp4: no
   addresses: [192.168.0.11/24]
   gateway4: 192.168.0.1
   nameservers:
     addresses: [8.8.8.8, 8.8.4.4]
+enp0s6:
+  dhcp4: yes
 ```
 
 ```bash
@@ -709,7 +712,22 @@ http://192.168.0.11/horizon
    my_ip = 192.168.0.11
    ```
 
-   !!!配置 /etc/nova/nova.conf 的 `[neutron]` 部分。有关详细信息，请参阅网络服务安装指南。
+   在 `[neutron]` 部分，配置访问参数，启用元数据代理，并配置secret：
+
+   ```py
+   [neutron]
+   # ...
+   auth_url = http://192.168.0.11:5000
+   auth_type = password
+   project_domain_name = default
+   user_domain_name = default
+   region_name = RegionOne
+   project_name = service
+   username = neutron
+   password = 705432
+   service_metadata_proxy = true
+   metadata_proxy_shared_secret = 705432
+   ```
 
    在 `[vnc]` 部分中，配置VNC代理以使用控制器节点的管理接口IP地址：
 
@@ -1129,6 +1147,388 @@ service glance-api restart
    ```bash
    glance image-list
    ```
+
+## Neutron
+
+### 提供商网络接口
+
+编辑 `/etc/network/interfaces` 文件以包含以下内容：
+
+`enp0s6`为提供商的接口名称
+
+```bash
+# The provider network interface
+auto enp0s6
+iface enp0s6 inet manual
+up ip link set dev $IFACE up
+down ip link set dev $IFACE down
+```
+
+更改之后重启
+
+### 配置名称解析
+
+1. 将节点的主机名设置为 `controller` （不设置的话可以不用修改hosts中的内容）
+
+2. 编辑 `/etc/hosts` 文件以包含以下内容：
+
+   ```py
+   # controller
+   192.168.0.11       controller
+   
+   # compute1
+   192.168.0.31       compute1
+   
+   # block1
+   192.168.0.41       block1
+   
+   # object1
+   192.168.0.51       object1
+   
+   # object2
+   192.168.0.52       object2
+   ```
+
+### 安装和配置控制器节点
+
+1. 要创建数据库，请完成以下步骤：
+
+   使用数据库访问客户端以 `root` 用户连接数据库服务器：
+
+   ```bash
+   mysql
+   ```
+
+   创建 `neutron` 数据库：
+
+   ```sql
+   CREATE DATABASE neutron;
+   ```
+
+   授予对 `neutron` 数据库的正确访问权限 ：
+
+   ```sql
+   GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '705432';
+   GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '705432';
+   ```
+
+2. 获取 `admin` 凭据以访问仅限管理员的 CLI 命令：
+
+   ```bash
+   source /admin-openrc.sh
+   ```
+
+3. 要创建服务凭证，请完成以下步骤：
+
+   创建 `neutron` 用户：
+
+   ```bash
+   openstack user create --domain default --password-prompt neutron
+   ```
+
+   将 `admin` 角色添加到 `neutron` 用户：
+
+   ```bash
+   openstack role add --project service --user neutron admin
+   ```
+
+   创建 `neutron` 服务实体：
+
+   ```bash
+   openstack service create --name neutron --description "OpenStack Networking" network
+   ```
+
+4. 创建网络服务 API 端点：
+
+   ```bash
+   openstack endpoint create --region RegionOne network public http://192.168.0.11:9696
+     
+   openstack endpoint create --region RegionOne network internal http://192.168.0.11:9696
+     
+   openstack endpoint create --region RegionOne network admin http://192.168.0.11:9696
+   ```
+
+### 配置提供商网络
+
+安装组件
+
+```bash
+apt install neutron-server neutron-plugin-ml2 \
+neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent \
+neutron-metadata-agent
+```
+
+### 配置服务器组件
+
+1. 编辑 `/etc/neutron/neutron.conf` 文件并完成以下操作：
+
+   在 `[database]` 部分中，配置数据库访问：
+
+   注释掉或删除 `[database]` 部分中的任何其他 `connection` 选项。
+
+   ```py
+   [database]
+   # ...
+   connection = mysql+pymysql://neutron:705432@192.168.0.11/neutron
+   ```
+
+   在 `[DEFAULT]` 部分中，启用 Modular Layer 2 (ML2) 插件并禁用其他插件：
+
+   ```py
+   [DEFAULT]
+   # ...
+   core_plugin = ml2
+   service_plugins =
+   ```
+
+   在 `[DEFAULT]` 部分中，配置 `RabbitMQ` 消息队列访问：
+
+   ```py
+   [DEFAULT]
+   # ...
+   transport_url = rabbit://openstack:705432@192.168.0.11
+   ```
+
+   在 `[DEFAULT]` 和 `[keystone_authtoken]` 部分中，配置身份服务访问：
+
+   注释掉或删除 `[keystone_authtoken]` 部分中的任何其他选项。
+
+   ```py
+   [DEFAULT]
+   # ...
+   auth_strategy = keystone
+   
+   [keystone_authtoken]
+   # ...
+   www_authenticate_uri = http://192.168.0.11:5000
+   auth_url = http://192.168.0.11:5000
+   memcached_servers = 192.168.0.11:11211
+   auth_type = password
+   project_domain_name = Default
+   user_domain_name = Default
+   project_name = service
+   username = neutron
+   password = 705432
+   ```
+
+   在 `[DEFAULT]` 和 `[nova]` 部分中，配置网络以通知计算网络拓扑更改：
+
+   ```py
+   [DEFAULT]
+   # ...
+   notify_nova_on_port_status_changes = true
+   notify_nova_on_port_data_changes = true
+   
+   [nova]
+   # ...
+   auth_url = http://705432:5000
+   auth_type = password
+   project_domain_name = Default
+   user_domain_name = Default
+   region_name = RegionOne
+   project_name = service
+   username = nova
+   password = 705432
+   ```
+
+2. 在 `[oslo_concurrency]` 部分，配置锁定路径：
+
+   ```py
+   [oslo_concurrency]
+   # ...
+   lock_path = /var/lib/neutron/tmp
+   ```
+
+### 配置模块化第 2 层 (ML2) 插件
+
+- 编辑 `/etc/neutron/plugins/ml2/ml2_conf.ini` 文件并完成以下操作：
+
+  在 `[ml2]` 部分中，启用平面和 VLAN 网络：
+
+  ```py
+  [ml2]
+  # ...
+  type_drivers = flat,vlan
+  ```
+
+  在 `[ml2]` 部分中，禁用自助服务网络：
+
+  ```py
+  [ml2]
+  # ...
+  tenant_network_types =
+  ```
+
+  在 `[ml2]` 部分中，启用 Linux 桥接机制：
+
+  ```py
+  [ml2]
+  # ...
+  mechanism_drivers = linuxbridge
+  ```
+
+  在 `[ml2]` 部分中，启用端口安全扩展驱动程序：
+
+  ```py
+  [ml2]
+  # ...
+  extension_drivers = port_security
+  ```
+
+  在 `[ml2_type_flat]` 部分中，将提供商虚拟网络配置为平面网络：
+
+  ```py
+  [ml2_type_flat]
+  # ...
+  flat_networks = provider
+  ```
+
+  在 `[securitygroup]` 部分，启用ipset以提高安全组规则的效率：
+
+  ```py
+  [securitygroup]
+  # ...
+  enable_ipset = true
+  ```
+
+### 配置 Linux 桥接代理
+
+- 编辑 `/etc/neutron/plugins/ml2/linuxbridge_agent.ini` 文件并完成以下操作：
+
+  在 `[linux_bridge]` 部分中，将提供商虚拟网络映射到提供商物理网络接口：
+
+  ```py
+  [linux_bridge]
+  physical_interface_mappings = provider:enp0s6
+  ```
+
+  在 `[vxlan]` 部分中，禁用 VXLAN 覆盖网络：
+
+  ```py
+  [vxlan]
+  enable_vxlan = false
+  ```
+
+  在 `[securitygroup]` 部分中，启用安全组并配置 Linux 桥接 iptables 防火墙驱动程序：
+
+  ```py
+  [securitygroup]
+  # ...
+  enable_security_group = true
+  firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+  ```
+
+  通过验证以下所有 `sysctl` 值是否设置为 `1` 来确保您的 Linux 操作系统内核支持网桥过滤器：
+
+  ```bash
+  sysctl net.bridge.bridge-nf-call-iptables
+  sysctl net.bridge.bridge-nf-call-ip6tables
+  ```
+
+### 配置 DHCP 代理
+
+编辑 `/etc/neutron/dhcp_agent.ini` 文件并完成以下操作：
+
+在 `[DEFAULT]` 部分中，配置 Linux 桥接口驱动程序、Dnsmasq DHCP 驱动程序，并启用隔离元数据，以便提供商网络上的实例可以通过网络访问元数据：
+
+```py
+[DEFAULT]
+# ...
+interface_driver = linuxbridge
+dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
+enable_isolated_metadata = true
+```
+
+### 配置元数据代理
+
+编辑 `/etc/neutron/metadata_agent.ini` 文件并完成以下操作：
+
+在 `[DEFAULT]` 部分中，配置元数据主机和共享密钥：
+
+```py
+[DEFAULT]
+# ...
+nova_metadata_host = 192.168.0.11
+metadata_proxy_shared_secret = 705432
+```
+
+### 配置计算服务以使用网络服务
+
+编辑 `/etc/nova/nova.conf` 文件并执行以下操作：
+
+在 `[neutron]` 部分，配置访问参数，启用元数据代理，并配置secret：
+
+```py
+[neutron]
+# ...
+auth_url = http://192.168.0.11:5000
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = 705432
+service_metadata_proxy = true
+metadata_proxy_shared_secret = 705432
+```
+
+### 完成安装
+
+1. 填充数据库：
+
+   ```bash
+   su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf \
+   --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+   ```
+
+2. 重启计算API服务：
+
+   ```bash
+   service nova-api restart
+   ```
+
+3. 重新启动网络服务。
+
+   ```bash
+   service neutron-server restart
+   service neutron-linuxbridge-agent restart
+   service neutron-dhcp-agent restart
+   service neutron-metadata-agent restart
+   ```
+
+### 创建提供商网络
+
+1. 获取 `admin` 凭据以访问仅限管理员的 CLI 命令：
+
+   ```bash
+   source /admin-openrc.sh
+   ```
+
+2. 创建网络：
+
+   ```bash
+   openstack network create  --share --external \
+   --provider-physical-network provider \
+   --provider-network-type flat provider
+   ```
+
+3. 在网络上创建子网：
+
+   ```bash
+   openstack subnet create --network provider \
+   --allocation-pool start=192.168.10.2,end=192.168.10.254 \
+   --dns-nameserver 8.8.8.8 --gateway 192.168.10.1 \
+   --subnet-range 192.168.10.0/24 provider
+   ```
+
+## 验证
+
+- 列出加载的扩展以验证 `neutron-server` 进程是否成功启动：
+
+  ```bash
+  openstack extension list --network
+  ```
 
 # 计算节点
 

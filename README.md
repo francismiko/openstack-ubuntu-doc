@@ -24,7 +24,7 @@
 - [x] Placement
 - [x] Cinder
 - [x] Glance
-- [ ] Neutron
+- [x] Neutron
 
 ### 以下为选配内容
 

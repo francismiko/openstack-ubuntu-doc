@@ -39,6 +39,12 @@ netplan apply
 192.168.0.11 controller
 ```
 
+- 查看系统日志：
+
+  ```bash
+  journalctl -xe
+  ```
+
 ## 数据库
 
 ### 安装和配置组件
@@ -135,7 +141,7 @@ netplan apply
 2. 编辑 `/etc/default/etcd` 文件，将 `ETCD_INITIAL_CLUSTER` 、 `ETCD_INITIAL_ADVERTISE_PEER_URLS` 、 `ETCD_ADVERTISE_CLIENT_URLS` 、 `ETCD_LISTEN_CLIENT_URLS` 设置为管理 IP 地址控制器节点允许其他节点通过管理网络进行访问：
 
    ```yaml
-   ETCD_NAME="controller"
+   ETCD_NAME="192.168.0.11"
    ETCD_DATA_DIR="/var/lib/etcd"
    ETCD_INITIAL_CLUSTER_STATE="new"
    ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster-01"
@@ -679,7 +685,7 @@ http://192.168.0.11/horizon
    [keystone_authtoken]
    # ...
    www_authenticate_uri = http://192.168.0.11:5000/
-   auth_url = http://192.168.0.11:5000/
+   auth_url = http://192.168.0.11:5000/v3
    memcached_servers = 192.168.0.11:11211
    auth_type = password
    project_domain_name = Default
@@ -694,7 +700,7 @@ http://192.168.0.11/horizon
    ```py
    [service_user]
    send_service_user_token = true
-   auth_url = https://192.168.0.11/identity
+   auth_url = http://192.168.0.11:5000/identity/v3
    auth_strategy = keystone
    auth_type = password
    project_domain_name = Default
@@ -938,7 +944,7 @@ service nova-novncproxy restart
    [keystone_authtoken]
    # ...
    www_authenticate_uri = http://192.168.0.11:5000
-   auth_url = http://192.168.0.11:5000
+   auth_url = http://192.168.0.11:5000/v3/
    memcached_servers = 192.168.0.11:11211
    auth_type = password
    project_domain_name = Default
@@ -1579,7 +1585,7 @@ metadata_proxy_shared_secret = 705432
    ```py
    [service_user]
    send_service_user_token = true
-   auth_url = https://192.168.0.11/identity
+   auth_url = http://192.168.0.11/identity/v3
    auth_strategy = keystone
    auth_type = password
    project_domain_name = Default

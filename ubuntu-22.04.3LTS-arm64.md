@@ -592,7 +592,7 @@ http://192.168.0.11/horizon
     
     [keystone_authtoken]
     # ...
-    auth_url = http://192.168.0.11:5000/v3
+    auth_url = http://192.168.0.11:5000
     memcached_servers = 192.168.0.11:11211
     auth_type = password
     project_domain_name = Default
@@ -685,7 +685,7 @@ http://192.168.0.11/horizon
    [keystone_authtoken]
    # ...
    www_authenticate_uri = http://192.168.0.11:5000/
-   auth_url = http://192.168.0.11:5000/v3
+   auth_url = http://192.168.0.11:5000
    memcached_servers = 192.168.0.11:11211
    auth_type = password
    project_domain_name = Default
@@ -700,7 +700,7 @@ http://192.168.0.11/horizon
    ```py
    [service_user]
    send_service_user_token = true
-   auth_url = http://192.168.0.11:5000/identity/v3
+   auth_url = http://192.168.0.11:5000/identity
    auth_strategy = keystone
    auth_type = password
    project_domain_name = Default
@@ -773,7 +773,7 @@ http://192.168.0.11/horizon
    project_name = service
    auth_type = password
    user_domain_name = Default
-   auth_url = http://192.168.0.11:5000/v3
+   auth_url = http://192.168.0.11:5000
    username = placement
    password = 705432
    ```

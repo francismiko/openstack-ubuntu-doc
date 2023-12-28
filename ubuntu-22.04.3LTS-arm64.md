@@ -592,7 +592,7 @@ http://192.168.0.11/horizon
     
     [keystone_authtoken]
     # ...
-    auth_url = http://192.168.0.11:5000
+    auth_url = http://192.168.0.11:5000/v3
     memcached_servers = 192.168.0.11:11211
     auth_type = password
     project_domain_name = Default
@@ -1585,7 +1585,7 @@ metadata_proxy_shared_secret = 705432
    ```py
    [service_user]
    send_service_user_token = true
-   auth_url = http://192.168.0.11/identity/v3
+   auth_url = http://192.168.0.11/identity
    auth_strategy = keystone
    auth_type = password
    project_domain_name = Default
@@ -1595,8 +1595,23 @@ metadata_proxy_shared_secret = 705432
    password = 705432
    ```
 
-   在 `[DEFAULT]` 部分中，配置 `my_ip` 选项：
+   在 `[neutron]` 部分，配置访问参数：
 
+   ```py
+   [neutron]
+   # ...
+   auth_url = http://192.168.0.11:5000
+   auth_type = password
+   project_domain_name = Default
+   user_domain_name = Default
+   region_name = RegionOne
+   project_name = service
+   username = neutron
+   password = 705432
+   ```
+   
+   在 `[DEFAULT]` 部分中，配置 `my_ip` 选项：
+   
    ```py
    [DEFAULT]
    # ...
@@ -1604,9 +1619,9 @@ metadata_proxy_shared_secret = 705432
    ```
 
    !!!配置 /etc/nova/nova.conf 的 `[neutron]` 部分。有关更多详细信息，请参阅网络服务安装指南。
-
+   
    在 `[vnc]` 部分中，启用并配置远程控制台访问：
-
+   
    ```py
    [vnc]
    # ...
@@ -1615,25 +1630,25 @@ metadata_proxy_shared_secret = 705432
    server_proxyclient_address = $my_ip
    novncproxy_base_url = http://192.168.0.11:6080/vnc_auto.html
    ```
-
+   
    在 `[glance]` 部分，配置图片服务API的位置：
-
+   
    ```py
    [glance]
    # ...
    api_servers = http://192.168.0.11:9292
    ```
-
+   
    在 `[oslo_concurrency]` 部分，配置锁定路径：
-
+   
    ```py
    [oslo_concurrency]
    # ...
    lock_path = /var/lib/nova/tmp
    ```
-
+   
    在 `[placement]` 部分中，配置 Placement API：
-
+   
    ```py
    [placement]
    # ...
@@ -1642,7 +1657,7 @@ metadata_proxy_shared_secret = 705432
    project_name = service
    auth_type = password
    user_domain_name = Default
-   auth_url = http://192.168.0.11:5000/v3
+   auth_url = http://192.168.0.11:5000
    username = placement
    password = 705432
    ```
@@ -1714,3 +1729,159 @@ metadata_proxy_shared_secret = 705432
    ```bash
    nova-status upgrade check
    ```
+
+## 部署Neutron
+
+### 安装组件
+
+```bash
+apt install neutron-linuxbridge-agent
+```
+
+### 配置公共组件
+
+- 编辑 `/etc/neutron/neutron.conf` 文件并完成以下操作：
+
+  在 `[database]` 部分中，注释掉任何 `connection` 选项，因为计算节点不直接访问数据库。
+
+  在 `[DEFAULT]` 部分中，配置 `RabbitMQ` 消息队列访问：
+
+  ```py
+  [DEFAULT]
+  # ...
+  transport_url = rabbit://openstack:705432@192.168.0.11
+  ```
+
+  在 `[DEFAULT]` 和 `[keystone_authtoken]` 部分中，配置身份服务访问：
+
+  注释掉或删除 `[keystone_authtoken]` 部分中的任何其他选项。
+
+  ```py
+  [DEFAULT]
+  # ...
+  auth_strategy = keystone
+  
+  [keystone_authtoken]
+  # ...
+  www_authenticate_uri = http://192.168.0.11:5000
+  auth_url = http://192.168.0.11:5000
+  memcached_servers = 192.168.0.11:11211
+  auth_type = password
+  project_domain_name = Default
+  user_domain_name = Default
+  project_name = service
+  username = neutron
+  password = 705432
+  ```
+
+  在 `[oslo_concurrency]` 部分，配置锁定路径：
+
+  ```py
+  [oslo_concurrency]
+  # ...
+  lock_path = /var/lib/neutron/tmp
+  ```
+
+  在 `[vnc]` 部分中，启用并配置远程控制台访问：
+
+  ```py
+  [vnc]
+  # ...
+  enabled = true
+  server_listen = 0.0.0.0
+  server_proxyclient_address = $my_ip
+  novncproxy_base_url = http://192.168.0.11:6080/vnc_auto.html
+  ```
+
+  在 `[glance]` 部分，配置镜像服务API的位置：
+
+  ```py
+  [glance]
+  # ...
+  api_servers = http://192.168.0.11:9292
+  ```
+
+  在 `[oslo_concurrency]` 部分，配置锁定路径：
+
+  ```py
+  [oslo_concurrency]
+  # ...
+  lock_path = /var/lib/nova/tmp
+  ```
+
+  在 `[placement]` 部分中，配置 Placement API：
+
+  ```py
+  [placement]
+  # ...
+  region_name = RegionOne
+  project_domain_name = Default
+  project_name = service
+  auth_type = password
+  user_domain_name = Default
+  auth_url = http://192.168.0.11:5000/v3
+  username = placement
+  password = 705432
+  ```
+
+### 配置网络选项
+
+- 配置 Linux 桥接代理
+
+  编辑 `/etc/neutron/plugins/ml2/linuxbridge_agent.ini` 文件并完成以下操作：
+
+  在 `[linux_bridge]` 部分中，将提供商虚拟网络映射到提供商物理网络接口：
+
+  ```py
+  [linux_bridge]
+  physical_interface_mappings = provider:enp0s6
+  ```
+
+  在 `[vxlan]` 部分中，禁用 VXLAN 覆盖网络：
+
+  ```py
+  [vxlan]
+  enable_vxlan = false
+  ```
+
+  在 `[securitygroup]` 部分中，启用安全组并配置 Linux 桥接 iptables 防火墙驱动程序：
+
+  ```py
+  [securitygroup]
+  # ...
+  enable_security_group = true
+  firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+  ```
+
+### 配置计算服务以使用网络服务
+
+编辑 `/etc/nova/nova.conf` 文件并完成以下操作：
+
+在 `[neutron]` 部分，配置访问参数：
+
+```py
+[neutron]
+# ...
+auth_url = http://192.168.0.11:5000
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = 705432
+```
+
+### 完成安装
+
+- 重新启动计算服务：
+
+  ```bash
+  service nova-compute restart
+  ```
+
+- 重新启动 Linux 桥接代理：
+
+  ```bash
+  service neutron-linuxbridge-agent restart
+  ```
